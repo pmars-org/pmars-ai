@@ -15,11 +15,30 @@ system display libraries. macOS builds target macOS 11 or newer; they are
 not signed with a Developer ID or notarized. Test on the supported systems
 before advertising a particular minimum OS as verified.
 
+Release packages contain stripped executables, with no separate debug-symbol
+download. The included source can be rebuilt with `NO_STRIPPING=1` and debug
+compiler flags; see BUILD-DISPLAYS.md. Stripping does not remove the cdb
+Redcode debugger from console or graphics builds.
+
 ## Try a build
 
 Pull requests and pushes to `main` build all four platforms without publishing
-a release. After all jobs pass, download **release-downloads** from the workflow
-run's Artifacts section. It contains five ZIPs and `SHA256SUMS`.
+a release. In the workflow run's Artifacts section, choose just your platform:
+
+- **build-windows-x64**
+- **build-linux-x64**
+- **build-macos-arm64** (Apple Silicon)
+- **build-macos-x64** (Intel)
+- **build-source** (source only)
+
+Each download contains one ZIP with the matching source, configuration files,
+warriors and, for platform builds, binaries. Individual downloads become
+available as soon as that platform's tests and packaging pass.
+
+For testing everything, **all-platforms-downloads** contains all five ZIPs and
+`SHA256SUMS`. This combined download appears after all jobs pass.
+Published GitHub Releases also list each platform ZIP separately, so users
+can download their platform directly without downloading the others.
 
 Once the workflow is on the default branch, you can also select
 **Actions → Build release binaries → Run workflow** and choose a branch.
