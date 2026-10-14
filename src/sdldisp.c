@@ -1107,7 +1107,7 @@ Font_Init(FixedFontInfo *f, const Uint8* bitmaps, Uint16 w, Uint16 h, Uint16 nch
 	 * colorkey. */
 	col = SDL_MapSurfaceRGB(s, PaletteRGB[i].r,
 			 PaletteRGB[i].g, PaletteRGB[i].b);
-	fill_box(s, 0, 0, c*w*h, h, key);
+	fill_box(s, 0, 0, s->w, s->h, key);
 
 	/* Draw the individual characters (vewy slowly :/) */
 	Slock(s);

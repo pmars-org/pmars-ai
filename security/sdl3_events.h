@@ -29,6 +29,66 @@ static void test_input(const char *expected)
         test_require(0, "input contents");
     }
 }
+/* Check actual glyph pixels, including transparency, rather than merely
+ * accepting a nonempty framebuffer. Warrior names use this same blit path. */
+static void test_font_pixels(void)
+{
+    int colour, c, x, y;
+    Uint32 background = Colours[1]; /* blue in both palettes */
+    SDL_Rect clip = {0, 0, CurrentFont.w, CurrentFont.h};
+    for (colour = 0; colour < NCOLOURS; ++colour) {
+        for (c = 32; c < 127; ++c) {
+            SDL_FillSurfaceRect(TheSurf, &clip, background);
+            outcharxy((unsigned char)c, 0, 0, colour, &clip);
+            Slock(TheSurf);
+            for (y = 0; y < CurrentFont.h; ++y) {
+                Uint8 bits = CurrentFont.bitmaps[c * CurrentFont.h + y];
+                for (x = 0; x < CurrentFont.w; ++x) {
+                    Uint32 actual = *(Uint32 *)((Uint8 *)TheSurf->pixels
+                                               + y * TheSurf->pitch + x * 4);
+                    /* Black is the transparent colour in the glyph atlas. */
+                    Uint32 expected = colour != BLACK && (bits & (0x80 >> x))
+                                      ? Colours[colour] : background;
+                    test_require(actual == expected, "font foreground/background pixels");
+                }
+            }
+            Sunlock(TheSurf);
+        }
+    }
+    redraw();
+    /* Also verify the names survive the complete panel layout/redraw. */
+    for (c = 0; c < MAXTEXTOUTPUTS; ++c) {
+        Layout *layout = all_textoutputs[c].layout;
+        if (layout && layout->doredraw == doredraw_names) {
+            const SDL_Rect *view = panel_view(&layout->p);
+            int w;
+            test_require(view->h >= CurrentFont.h, "warrior name panel height");
+            Slock(TheSurf);
+            for (w = 0; w < warriors; ++w) {
+                const unsigned char *name = (const unsigned char *)warrior[w].name;
+                int start = view->x + w * view->w / warriors;
+                for (; *name && start + CurrentFont.w <= view->x + view->w;
+                     ++name, start += CurrentFont.w) {
+                    if (*name >= CurrentFont.nchars) continue;
+                    for (y = 0; y < CurrentFont.h; ++y) {
+                        Uint8 bits = CurrentFont.bitmaps[*name * CurrentFont.h + y];
+                        for (x = 0; x < CurrentFont.w; ++x) {
+                            Uint32 actual = *(Uint32 *)((Uint8 *)TheSurf->pixels
+                                + (view->y + y) * TheSurf->pitch + (start + x) * 4);
+                            Uint32 expected = (bits & (0x80 >> x))
+                                ? Colours[WarColourIx[w]] : Colours[BLACK];
+                            test_require(actual == expected, "warrior name pixels after redraw");
+                        }
+                    }
+                }
+            }
+            Sunlock(TheSurf);
+            break;
+        }
+    }
+    test_require(c < MAXTEXTOUTPUTS, "warrior name panel exists");
+    printf("PASS: SDL3 ASCII glyph pixels and transparency in all colours\n");
+}
 static void sdl3_event_tests(void)
 {
     SDL_Event e;
@@ -55,6 +115,7 @@ static void sdl3_event_tests(void)
         }
         test_require(0, "exit handler returned");
     }
+    test_font_pixels();
     /* SDL_KEY_DOWN must not duplicate the following printable text event. */
     test_key(SDLK_L, 0); test_text("lis 0,3"); test_key(SDLK_RETURN, 0);
     test_input("lis 0,3\n");
@@ -91,6 +152,7 @@ static void sdl3_event_tests(void)
     for (i = 0; i < 40; ++i) sdlgr_puts("SDL3 scroll test: 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
     relayout(800, 600);
     test_require(TheSurf->w == 800 && TheSurf->h == 600, "resize buffer");
+    test_font_pixels();
     for (i = 0; i < 128; ++i) display_box(i, TL|TR|BL|BR, WarColourIx[i % warriors]);
     test_require(*(Uint32 *)((Uint8 *)TheSurf->pixels + ArenaY * TheSurf->pitch + ArenaX * 4)
                  == Colours[WarColourIx[0]], "core sprite pixel before redraw");
