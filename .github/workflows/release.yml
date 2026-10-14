@@ -58,6 +58,13 @@ jobs:
             cc: gcc
             cxx: g++
             ldflags: ''
+          - platform: linux-arm64
+            os: ubuntu-22.04-arm
+            shell: bash
+            make: make
+            cc: gcc
+            cxx: g++
+            ldflags: ''
           - platform: macos-arm64
             os: macos-15
             shell: bash
@@ -146,7 +153,7 @@ jobs:
           pattern: build-*
           path: dist
           merge-multiple: true
-      - name: Require all five matching archives
+      - name: Require all six matching archives
         run: python scripts/package_release.py checksums
       - uses: actions/upload-artifact@v7
         with:

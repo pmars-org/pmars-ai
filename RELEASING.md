@@ -6,6 +6,7 @@ The **Build release binaries** GitHub Actions workflow builds and tests:
 | --- | --- | --- |
 | Windows x64 | Windows 2022, MSYS2 UCRT64 GCC | pmars.exe, pmars-server.exe, pmars-sdl3.exe, pmars-gdi.exe |
 | Linux x64 | Ubuntu 22.04, GCC | pmars, pmars-server, pmars-sdl3 |
+| Linux ARM64 (AArch64) | Ubuntu 22.04 ARM64, GCC | pmars, pmars-server, pmars-sdl3 |
 | macOS Apple Silicon | macOS 15 ARM64, Apple Clang | pmars, pmars-server, pmars-sdl3 |
 | macOS Intel | macOS 15 Intel, Apple Clang | pmars, pmars-server, pmars-sdl3 |
 
@@ -22,11 +23,12 @@ Redcode debugger from console or graphics builds.
 
 ## Try a build
 
-Pull requests and pushes to `main` build all four platforms without publishing
+Pull requests and pushes to `main` build all five platforms without publishing
 a release. In the workflow run's Artifacts section, choose just your platform:
 
 - **build-windows-x64**
 - **build-linux-x64**
+- **build-linux-arm64** (64-bit ARM; not ARMv7/32-bit)
 - **build-macos-arm64** (Apple Silicon)
 - **build-macos-x64** (Intel)
 - **build-source** (source only)
@@ -35,7 +37,7 @@ Each download contains one ZIP with the matching source, configuration files,
 warriors and, for platform builds, binaries. Individual downloads become
 available as soon as that platform's tests and packaging pass.
 
-For testing everything, **all-platforms-downloads** contains all five ZIPs and
+For testing everything, **all-platforms-downloads** contains all six ZIPs and
 `SHA256SUMS`. This combined download appears after all jobs pass.
 Published GitHub Releases also list each platform ZIP separately, so users
 can download their platform directly without downloading the others.
@@ -75,6 +77,7 @@ The workflow creates these release assets:
 pmars-ai-0.9.6-source.zip
 pmars-ai-0.9.6-windows-x64.zip
 pmars-ai-0.9.6-linux-x64.zip
+pmars-ai-0.9.6-linux-arm64.zip
 pmars-ai-0.9.6-macos-arm64.zip
 pmars-ai-0.9.6-macos-x64.zip
 SHA256SUMS
@@ -111,7 +114,7 @@ Choose the native platform as appropriate. Output goes into ignored `dist/`.
 Source comes from **Git HEAD**, not uncommitted working files: commit source
 changes and rebuild before preparing a distributable release. The binary
 header is checked against the requested platform/architecture.
-`python scripts/package_release.py checksums` requires all five archives for
+`python scripts/package_release.py checksums` requires all six archives for
 the current version and commit, and rejects missing, extra or mixed-version
 archives. It is normally run by the collection job after downloading the
-four native builds and source package.
+five native builds and source package.
