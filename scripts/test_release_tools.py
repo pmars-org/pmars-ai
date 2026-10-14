@@ -1,6 +1,7 @@
 """Check release gating: complete artifact sets, provenance, hashes and tags."""
 import hashlib
 import json
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,13 +36,13 @@ class ReleaseGateTests(unittest.TestCase):
     def test_complete_set_hashes_exact_archive_bytes(self):
         release.checksums(self.output, self.ver)
         lines = (self.output / 'SHA256SUMS').read_text().splitlines()
-        self.assertEqual(len(lines), 5)
+        self.assertEqual(len(lines), 6)
         for line in lines:
             digest, name = line.split('  ')
             self.assertEqual(digest, hashlib.sha256((self.output / name).read_bytes()).hexdigest())
 
     def test_missing_platform_blocks_publication(self):
-        (self.output / release.archive_name(self.ver, 'macos-arm64')).unlink()
+        (self.output / release.archive_name(self.ver, 'linux-arm64')).unlink()
         with self.assertRaisesRegex(ValueError, 'Archive set mismatch'):
             release.checksums(self.output, self.ver)
         self.assertFalse((self.output / 'SHA256SUMS').exists())
@@ -58,6 +59,19 @@ class ReleaseGateTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Mismatched release metadata'):
                     release.checksums(self.output, self.ver)
         self.assertFalse((self.output / 'SHA256SUMS').exists())
+
+    def test_linux_architecture_validation(self):
+        for machine, target in ((183, 'linux-arm64'), (62, 'linux-x64')):
+            header = bytearray(64)
+            header[:6] = b'\x7fELF\x02\x01'
+            struct.pack_into('<H', header, 18, machine)
+            release.check_architecture(header, target)
+            other = 'linux-x64' if target == 'linux-arm64' else 'linux-arm64'
+            with self.assertRaises(ValueError):
+                release.check_architecture(header, other)
+            for invalid in (header[:10], b'not an executable', header[:4] + b'\x01' + header[5:]):
+                with self.assertRaises(ValueError):
+                    release.check_architecture(invalid, target)
 
     def test_tag_validation(self):
         for tag, expected in (('v0.9.6', '0.9.6'), ('v0.9.6-rc.1', '0.9.6-rc.1')):

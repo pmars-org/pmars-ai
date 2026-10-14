@@ -13,7 +13,7 @@ import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLATFORMS = ('source', 'windows-x64', 'linux-x64', 'macos-arm64', 'macos-x64')
+PLATFORMS = ('source', 'windows-x64', 'linux-x64', 'linux-arm64', 'macos-arm64', 'macos-x64')
 
 
 def git(*args):
@@ -49,8 +49,9 @@ def check_architecture(data, target):
             raise ValueError('Not a Windows executable')
         offset = struct.unpack_from('<I', data, 60)[0]
         valid = data[offset:offset + 4] == b'PE\0\0' and struct.unpack_from('<H', data, offset + 4)[0] == 0x8664
-    elif target == 'linux-x64':
-        valid = data[:6] == b'\x7fELF\x02\x01' and struct.unpack_from('<H', data, 18)[0] == 62
+    elif target in ('linux-x64', 'linux-arm64'):
+        machine = 183 if target == 'linux-arm64' else 62  # EM_AARCH64 / EM_X86_64
+        valid = len(data) >= 20 and data[:6] == b'\x7fELF\x02\x01' and struct.unpack_from('<H', data, 18)[0] == machine
     else:
         cpu = 0x100000C if target == 'macos-arm64' else 0x1000007
         valid = data[:4] == b'\xcf\xfa\xed\xfe' and struct.unpack_from('<I', data, 4)[0] == cpu
