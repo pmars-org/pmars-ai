@@ -110,7 +110,7 @@ ifneq ($(strip $(PMARS_DATADIR)),)
 SDL_CONFIGURE += "-DPMARS_DATADIR=$(PMARS_DATADIR)"
 endif
 
-.PHONY: all help curses default sdl sdl3 gdi check-gdi check-sdl check-sdl3 check-sdl-native server check check-console xwin clean
+.PHONY: all help curses default sdl sdl3 gdi check-gdi check-sdl check-sdl3 check-sdl-native server check check-rc5 check-console xwin clean
 
 all: help
 
@@ -192,12 +192,18 @@ check-console: default server
 	$(PYTHON) ../security/test_console.py ./$(MAINFILE) ./$(SERVERFILE)
 	$(PYTHON) ../security/test_configpath.py ./$(MAINFILE) ./$(SERVERFILE)
 
-check: server
+check: server check-rc5
 	$(PYTHON) ../security/test_security.py ./$(SERVERFILE)
 	$(PYTHON) ../security/test_096.py ./$(SERVERFILE)
 	$(PYTHON) -c "from pathlib import Path; Path('../security/build').mkdir(parents=True, exist_ok=True)"
 	$(CC) -std=c99 -O2 ../security/test_eval.c eval.c -o ../security/build/test-eval$(EXEEXT)
 	$(PYTHON) -c "import subprocess; subprocess.run(['../security/build/test-eval$(EXEEXT)'], check=True)"
+
+# Text -F placement seeds use RC5; keep rotation and distribution checks in CI.
+check-rc5:
+	$(PYTHON) -c "from pathlib import Path; Path('../security/build').mkdir(parents=True, exist_ok=True)"
+	$(CC) -std=c99 -O2 ../security/test_rc5.c global.c -o ../security/build/test-rc5$(EXEEXT)
+	$(PYTHON) -c "import subprocess; subprocess.run(['../security/build/test-rc5$(EXEEXT)'], check=True)"
 
 xwin: CFLAGS += -DXWINGRAPHX
 xwin: LIBS = -L/usr/X11R6/lib -lX11

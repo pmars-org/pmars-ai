@@ -151,8 +151,11 @@ init_rc5(U32_T *schedule)
 }
 
 
-#define ROL(x,y) (((U32_T)(x) << ((y)&31)) | ((U32_T)(x) >> ((y)&31)))
-#define ROR(x,y) (((U32_T)(x) >> ((y)&31)) | ((U32_T)(x) << ((y)&31)))
+/* 32-bit rotations. The opposite shift is 32-y, masked so y=0 never shifts by 32.
+ * Shifting both ways by y (as in 0.9.6-dev) discarded key and counter bits, so
+ * non-numeric -F seeds produced clustered positions and similar keys collided. */
+#define ROL(x,y) (((U32_T)(x) << ((y)&31)) | ((U32_T)(x) >> ((32-((y)&31))&31)))
+#define ROR(x,y) (((U32_T)(x) >> ((y)&31)) | ((U32_T)(x) << ((32-((y)&31))&31)))
 
 #define _P UINT32_C(0xb7e15163)
 #define _Q UINT32_C(0x9e3779b9)
