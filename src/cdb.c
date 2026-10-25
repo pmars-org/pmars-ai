@@ -35,7 +35,7 @@
 #include <pc.h>
 #endif
 
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
 
 #define VERBLEN 3
 #define SKIP_SPACE(s) while(isspace(*s)) ++s
@@ -353,6 +353,43 @@ next_sub:;
   return NULL;
 }
 #endif
+#ifdef BROWSER
+#include <emscripten.h>
+static int browser_session, browser_panel, browser_explicit_command;
+static ADDR_T browser_other_address;
+static double browser_deadline;
+EM_ASYNC_JS(int, browser_checkpoint, (), {
+  await new Promise(resolve => setTimeout(resolve, 0));
+  return Module.cdbCancelled ? 1 : 0;
+});
+EM_ASYNC_JS(int, browser_readline, (char *buffer, int capacity, const char *prompt), {
+  const text = await Module.cdbReadLine(UTF8ToString(prompt));
+  if (text === null || Module.cdbCancelled) return 0;
+  stringToUTF8(text + "\n", buffer, capacity);
+  return 1;
+});
+EM_JS(void, browser_command, (const char *text), {
+  if (Module.cdbCommand) Module.cdbCommand(UTF8ToString(text));
+});
+EM_JS(void, browser_output, (const char *text), {
+  if (Module.cdbOutput) Module.cdbOutput(UTF8ToString(text));
+});
+static int browser_poll(void) {
+  if (emscripten_get_now() < browser_deadline) return 0;
+  if (browser_checkpoint()) { cmdMod = RESET; nextMacro = NULL; skipCounter = 0; return 1; }
+  browser_deadline = emscripten_get_now() + 4;
+  return 0;
+}
+void web_cdb_executed(void) { browser_session = 0; }
+EMSCRIPTEN_KEEPALIVE void web_cdb_new_command(void) {
+  cmdMod = RESET; nextMacro = NULL; skipCounter = 0; browser_explicit_command = 1;
+  browser_deadline = emscripten_get_now() + 4;
+}
+EMSCRIPTEN_KEEPALIVE long web_cdb_take_skip(void) {
+  long count = skipCounter; skipCounter = 0; return count > 0 ? count : 0;
+}
+#endif
+
 /*---------------------------------------------------------------------------
  cdb - main debugger loop, command dispatcher
  ---------------------------------------------------------------------------*/
@@ -406,6 +443,10 @@ cdb(message)
 #endif /* DOSTXTGRAPHX */
 #endif /* DOSALLGRAPHX */
 
+#ifdef BROWSER
+  if (browser_session) { browser_explicit_command = 0; goto browser_command_loop; }
+  browser_session = 1;
+#endif
   W2 = W->nextWarrior;
   if (targetID == QUEUE) {
     curAddr = 0;
@@ -429,12 +470,32 @@ cdb(message)
   }
 
   cdb_fputs(message, COND);
+  #ifdef BROWSER
+  if (!browser_explicit_command) print_core(curAddr, curAddr);
+  browser_explicit_command = 0;
+  #else
   print_core(curAddr, curAddr);
+  #endif
+#ifdef BROWSER
+browser_command_loop:
+#endif
   do {                                /* command interpreter loop */
     cmdStr = get_cmd(CDB_PROMPT);        /* get (chained) command */
+#ifdef BROWSER
+    if (!cmdStr) { inCdb = FALSE; return 3; } /* idle/input cancelled */
+#endif
     argType = parse_cmd(cmdStr, verbStr, &start, &stop, argStr);
     switch (hash_str(verbStr, VERBLEN)) {        /* decode on hash value for
                                                  * speed */
+#ifdef BROWSER
+    case SWI_H: case SW_H:
+      i = (*argStr && start == stop && (start == 1 || start == 2)) ? start - 1 : !browser_panel;
+      if (i != browser_panel) { ADDR_T saved = curAddr; curAddr = browser_other_address; browser_other_address = saved; browser_panel = i; }
+      break;
+    case CLO_H: browser_panel = 0; break;
+    case SHE_H: case SH_H:
+      cdb_fputs("Shell commands are unavailable in the browser.\n", FORCE); break;
+#endif
     case CAL_H:
     case CA_H:                        /* calculate */
       if (argType == RANGE_T) {
@@ -822,7 +883,11 @@ cdb(message)
       }
 #endif
 
+#ifdef BROWSER
+      inCdb = FALSE; browser_session = 0; return 4;
+#else
       Exit(USERABORT);
+#endif
 
     case REM_H:                /* macro comment */
       break;
@@ -839,6 +904,9 @@ cdb(message)
       for (i = 0; argStr[i]; ++i)
         argStr[i] = toupper_(argStr[i]);
       for (i = curAddr + 1; !cmdMod && i != curAddr; ++i) {
+#ifdef BROWSER
+        if (browser_poll()) break;
+#endif
         if (i == targetSize)
           i = 0;
         if (!wildsearch(argStr, (*targetview) (i, outs))) {
@@ -848,7 +916,7 @@ cdb(message)
       }
       cdb_fputs((*targetview) (curAddr, outs), COND);
       break;
-#if !defined(__MAC__) && !defined(XWINGRAPHX) && !defined(SOFTGRAPHX)
+#if !defined(__MAC__) && !defined(XWINGRAPHX) && !defined(SOFTGRAPHX) && !defined(BROWSER)
     case SHE_H:                /* execute shell (command) */
     case SH_H:
 #if defined(DOSALLGRAPHX)
@@ -1064,6 +1132,9 @@ cdb(message)
 #endif /* DOSGRXGRAPHX */
 #endif /* DOSTXTGRAPHX */
 #endif /* DOSALLGRAPHX */
+#ifdef BROWSER
+  browser_session = 0;
+#endif
   return returnValue;
 }
 
@@ -1074,6 +1145,9 @@ ADDR_T
 queue(index)
   int     index;
 {
+#ifdef BROWSER
+  if (!QW->tasks) return progCnt;
+#endif
   index = (index % QW->tasks + QW->tasks) % QW->tasks;
   if (!index)
     return progCnt;
@@ -1111,6 +1185,9 @@ get_cmd(prompt)
                                  * macro */
     cmdMod = curCmd = nextCmd = 0;
 new_input:
+#ifdef BROWSER
+  if (browser_poll()) return NULL;
+#endif
 
 #if 0
   printf("entering with inputStr+(curCmd=%d)=\"%s\",inputStr+(nextCmd=%d)=\"%s\"\n",
@@ -1215,7 +1292,12 @@ new_input:
 #if defined(STDGRAPHX)
       rv = stdio_gets(inputStr + i, MAXCMDSTR - i, prompt);
 #else
+#ifdef BROWSER
+      if (!browser_readline(inputStr + i, MAXCMDSTR - i + 1, prompt)) return NULL;
+      rv = inputStr + i;
+#else
       rv = fgets(inputStr + i, MAXCMDSTR - i + 1, stdin);
+#endif
 #endif /* STDGRAPHX */
 #endif /* SOFTGRAPHX */
 #endif /* XWINGRAPHX */
@@ -1232,7 +1314,11 @@ new_input:
       if (logfile)
         fputs(inputStr + i, logfile);        /* echo to logfile if logging */
       NOEOL(inputStr + i);
+#ifdef BROWSER
+      if ((i = strlen(inputStr)) > 0 && inputStr[--i] == '\\') {
+#else
       if (inputStr[i = strlen(inputStr) - 1] == '\\') {
+#endif
         conLine = TRUE;
         inputStr[i] = 0;
       } else
@@ -1244,6 +1330,9 @@ new_input:
     /* if leading space, don't save as last command */
     else if (!isspace(inputStr[0]))
       strcpy(lastCmdStr, inputStr);
+#ifdef BROWSER
+    if (!strcmp(prompt, CDB_PROMPT)) browser_command(inputStr);
+#endif
     nextCmd = curCmd = 0;
 #ifdef CYCLE_CHECK
     macroEnd = 0;
@@ -1272,6 +1361,9 @@ new_input:
 #endif                                /* SOFTGRAPHX */
   /* advance to next ~,! or \0 */
 advance:
+#ifdef BROWSER
+  if (browser_poll()) return NULL;
+#endif
   marking = 0;
   for (inpPtr = nextCmd; inputStr[inpPtr] && (inputStr[inpPtr] != CMDSEP)
        && ((nextCmd == 0 && inputStr[inpPtr + 1] != CMDREP) ||
@@ -1527,7 +1619,11 @@ cdb_fputs(str, wout)
     stdio_puts(str);
   printAttr = 0;
 #else
+#ifdef BROWSER
+    browser_output(str);
+#else
     fputs(str, STDOUT);
+#endif
 #endif /* STD */
 #endif /* SDL */
 #endif /* X11 */
@@ -1851,6 +1947,9 @@ help()
   for (helpIdx = 0; *helpText[helpIdx]; ++helpIdx) {
     if ((!silent) && (++count == showLines)) {
       xInpP = get_cmd(pagePrompt);
+#ifdef BROWSER
+      if (!xInpP) return;
+#endif
       SKIP_SPACE(xInpP);
       if ((*xInpP == 'q') || (*xInpP == 'Q')) {
         cdb_fputs("\n", COND);
@@ -1932,10 +2031,16 @@ print_core(start, stop)
                                  * etc. */
   cdb_fputs((*targetview) (start, outs), COND);
   for (; start != stop;) {
+#ifdef BROWSER
+    if (browser_poll()) return;
+#endif
     if (++start == targetSize)
       start = 0;
     if ((!silent) && (++count == showLines) && (start != stop)) {
       xInpP = get_cmd(pagePrompt);
+#ifdef BROWSER
+      if (!xInpP) return;
+#endif
       SKIP_SPACE(xInpP);
       if ((*xInpP == 'q') || (*xInpP == 'Q')) {
         cdb_fputs("\n", COND);
@@ -1971,6 +2076,9 @@ set_trace(start, stop)
   do {
     if (start == targetSize)
       start = 0;
+#ifdef BROWSER
+    { extern void web_clear_breakpoint_override(int); web_clear_breakpoint_override(targetSelect(start)); }
+#endif
     memory[targetSelect(start)].debuginfo |= 1;
   } while (start++ != stop);
 }
@@ -1984,6 +2092,9 @@ unset_trace(start, stop)
   do {
     if (start == targetSize)
       start = 0;
+#ifdef BROWSER
+    { extern void web_clear_breakpoint_override(int); web_clear_breakpoint_override(targetSelect(start)); }
+#endif
     memory[targetSelect(start)].debuginfo &= ~1;
   } while (start++ != stop);
 }
@@ -2149,6 +2260,9 @@ edit_core(start, stop)
 
     cdb_fputs(outs, COND);
     xInpP = get_cmd("");
+#ifdef BROWSER
+    if (!xInpP) return;
+#endif
     SKIP_SPACE(xInpP);
 
     if (!TERMINAL(xInpP)) {
@@ -2201,6 +2315,9 @@ fill_core(start, stop)
 
   cdb_fputs(fillWith, COND);
   xInpP = get_cmd("");
+#ifdef BROWSER
+  if (!xInpP) return;
+#endif
   SKIP_SPACE(xInpP);
   if (targetID == PSP) {
     if ((evalerr = eval_expr(xInpP, &evalres)) < OK_EXPR) {
@@ -2229,6 +2346,9 @@ fill_core(start, stop)
         return;
 
       sstart += (long) result;
+#ifdef BROWSER
+      if (browser_poll()) return;
+#endif
       while (result--) {
         if (++start == targetSize)
           start -= targetSize;
@@ -2357,7 +2477,15 @@ load_macros(fnStr)
 #endif /* DOSGRXGRAPHX */
 #endif /* DOSTXTGRAPHX */
 #endif /* DOSALLGRAPHX */
+#ifdef BROWSER
+        if (mfp == stdin) rv = browser_readline(outs + i, MAXSTR - i + 1, "Macro definition (. ends input): ") ? outs + i : NULL;
+        else
+#endif
         rv = fgets(outs + i, MAXSTR - i + 1, mfp);
+#ifdef BROWSER
+      if (!rv) { if (mfp != stdin) fclose(mfp); return; }
+      if (browser_poll()) { if (mfp != stdin) fclose(mfp); return; }
+#endif
       for (; outs[i]; i++)
         if (outs[i] == '\n' || outs[i] == '\r')
           break;
@@ -2483,6 +2611,9 @@ print_macros()
   for (macroIdx = 0; macroTab[macroIdx]; ++macroIdx) {
     if ((!silent) && (++count == showLines)) {
       xInpP = get_cmd(pagePrompt);
+#ifdef BROWSER
+      if (!xInpP) return;
+#endif
       SKIP_SPACE(xInpP);
       if ((*xInpP == 'q') || (*xInpP == 'Q')) {
         cdb_fputs("\n", COND);

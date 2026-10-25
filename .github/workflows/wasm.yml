@@ -1,0 +1,65 @@
+name: Build and test WebAssembly
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wasm:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Emscripten 4.0.23
+        run: |
+          git clone --depth 1 --branch 4.0.23 https://github.com/emscripten-core/emsdk.git "$RUNNER_TEMP/emsdk"
+          "$RUNNER_TEMP/emsdk/emsdk" install 4.0.23
+          "$RUNNER_TEMP/emsdk/emsdk" activate 4.0.23
+      - name: Build browser artifacts
+        run: |
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          npm ci
+          npm run build:editor
+          python3 docs/build.py
+      - name: Native and WASM regression checks
+        run: |
+          make -C src check check-console
+          node docs/test-engine.mjs src/pmars-server
+          node docs/test-options.mjs src/pmars-server
+          node docs/test-native-cdb.mjs
+          node docs/test-assembly.mjs
+      - name: Browser and Worker smoke tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/browser-tests" playwright@1.56.1
+          "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright" install --with-deps chromium
+          export PLAYWRIGHT_MODULE="$RUNNER_TEMP/browser-tests/node_modules/playwright/index.mjs"
+          python3 -m http.server 8765 --bind 127.0.0.1 > "$RUNNER_TEMP/pmars-http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8765/docs/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node docs/test-browser.mjs
+          node docs/test-native-cdb-browser.mjs
+          node docs/test-release-assets.mjs
+          node docs/test-integration.mjs
+      - name: Package and test the extracted WebAssembly distribution
+        run: |
+          python3 scripts/package_release.py package --platform wasm
+          python3 scripts/test_release_package.py --platform wasm
+      - name: Upload WebAssembly download
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-wasm
+          path: dist/*-wasm.zip
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true

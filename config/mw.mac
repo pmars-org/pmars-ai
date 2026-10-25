@@ -11,7 +11,7 @@ _tproc totals the number of processes of all warriors in n. tproc calls _tproc
 and echos the result.
 
 tproc=m _tproc~ca n
-_tproc=@wq c=.,w=n=0~@ca t=$+1~!!~@pq w=w+1~@ca n=n+($+1)*~!t~@pq of~@l c
+_tproc=@wq c=.,w=n=0~@ca t=$+1~!!~@pq w=w+1~@ca n=n+($+1)~!t~@pq of~@l c
 alt-b=m tproc
 
 Execute until warrior "x" is dead.

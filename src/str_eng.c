@@ -52,7 +52,7 @@ char   *endOfRound = "End of round %d\n";
  * Strings from cdb.c:
  */
 
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
 char   *pagePrompt = " RET for more, q to quit, a for all ";
 char   *exitingCdbToFinishSimulation = "Exiting cdb to finish simulation\n";
 char   *usageDisplay = "Usage: display clear|on|off|nnn\n";

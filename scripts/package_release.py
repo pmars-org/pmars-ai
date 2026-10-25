@@ -1,4 +1,4 @@
-"""Create release ZIPs from Git HEAD and native build outputs (stdlib only)."""
+"""Create release ZIPs from Git HEAD and native/WASM build outputs (stdlib only)."""
 import argparse
 import hashlib
 import io
@@ -13,7 +13,7 @@ import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLATFORMS = ('source', 'windows-x64', 'linux-x64', 'linux-arm64', 'macos-arm64', 'macos-x64')
+PLATFORMS = ('source', 'windows-x64', 'linux-x64', 'linux-arm64', 'macos-arm64', 'macos-x64', 'wasm')
 
 
 def git(*args):
@@ -34,7 +34,7 @@ def archive_name(ver, target):
 
 
 def programs(target):
-    if target == 'source':
+    if target in ('source', 'wasm'):
         return []
     names = ['pmars', 'pmars-server', 'pmars-sdl3']
     if target == 'windows-x64':
@@ -68,7 +68,45 @@ def add_file(archive, name, data, executable=False):
     archive.writestr(entry, data)
 
 
+def package_wasm(output, ver):
+    """Package the rebuilt static site and its corresponding-source archive."""
+    output.mkdir(parents=True, exist_ok=True)
+    prefix = f'pmars-ai-{ver}/'
+    destination = output / archive_name(ver, 'wasm')
+    web = ROOT / 'docs'
+    required = ('pmars.mjs', 'engine.mjs', 'settings.mjs', 'worker.mjs',
+                'dist/pmars.mjs', 'dist/pmars.wasm', 'dist/editor.mjs',
+                'dist/editor-LICENSES.txt', 'COPYING', 'pmars-source.zip',
+                'index.html', 'INTEGRATION.md', '.nojekyll')
+    for name in required:
+        if not (web / name).is_file():
+            raise ValueError(f'Missing WASM artifact: {name}; run docs/build.py first')
+    if (web / 'dist/pmars.wasm').read_bytes()[:8] != b'\0asm\x01\0\0\0':
+        raise ValueError('Invalid WebAssembly module')
+    # Never include test output or unrelated nested files from the working tree.
+    files = [p for p in web.iterdir() if p.is_file() and not p.name.startswith('test-')
+             and (p.suffix in ('.mjs', '.html', '.css', '.md', '.svg')
+                  or p.name in ('COPYING', '.nojekyll', 'pmars-source.zip'))]
+    files += [web / 'dist' / name for name in
+              ('pmars.mjs', 'pmars.wasm', 'editor.mjs', 'editor-LICENSES.txt')]
+    with zipfile.ZipFile(destination, 'w') as archive:
+        for path in sorted(files):
+            add_file(archive, prefix + 'docs/' + path.relative_to(web).as_posix(), path.read_bytes())
+        metadata = dict(version=ver, platform='wasm', commit=git('rev-parse', 'HEAD').decode().strip(), binaries=[])
+        add_file(archive, prefix + 'release.json', json.dumps(metadata, indent=2).encode() + b'\n')
+        add_file(archive, prefix + 'QUICKSTART.txt', (
+            'pMARS AI ' + ver + ' — WebAssembly\n\n'
+            'Serve docs/ over HTTP for the complete browser application.\n'
+            'Import docs/pmars.mjs for the engine API; see docs/INTEGRATION.md.\n'
+            'Keep the module tree together. Corresponding source: docs/pmars-source.zip.\n'
+            'License: docs/COPYING (GPL-2.0-or-later).\n'
+        ).encode())
+    print(destination)
+
+
 def package(output, ver, target):
+    if target == 'wasm':
+        return package_wasm(output, ver)
     output.mkdir(parents=True, exist_ok=True)
     prefix = f'pmars-ai-{ver}/'
     destination = output / archive_name(ver, target)

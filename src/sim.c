@@ -41,6 +41,9 @@ extern void sighandler(int dummy);
 #endif
 
 
+#ifdef BROWSER
+#include "webdisp.c"
+#else
 #if defined(MACGRAPHX)
 #include "macdisp.c"
 #else
@@ -117,6 +120,7 @@ extern void sighandler(int dummy);
 #endif
 #endif
 #endif
+#endif /* BROWSER */
 
 #ifdef DOS16
 #define push(val) *W->taskTail++=(val)
@@ -245,19 +249,33 @@ foldw(ADDR_T a)
 #endif
 
 
+#ifdef BROWSER
+#define SIM_LOCAL static
+#else
+#define SIM_LOCAL
+#endif
+
 void
 simulator1()
 {
 #ifdef PERMUTATE
-  int permidx = 0, permtmp, *permbuf = NULL;
+  SIM_LOCAL int permidx = 0, permtmp, *permbuf = NULL;
 #endif
   /* range for random number generator */
-  warrior_struct *oldW;                /* the previous living warrior to execute */
-  ADDR_T  positions = coreSize + 1 - (separation << 1);
-  ADDR_T  coreSize1 = coreSize - 1;
-  warrior_struct *starter = warrior;        /* pointer to warrior that starts
+  SIM_LOCAL warrior_struct *oldW;                /* the previous living warrior to execute */
+#ifdef BROWSER
+  static ADDR_T positions, coreSize1;
+#else
+  ADDR_T positions = coreSize + 1 - (separation << 1);
+  ADDR_T coreSize1 = coreSize - 1;
+#endif
+  SIM_LOCAL warrior_struct *starter = warrior;        /* pointer to warrior that starts
 					 * round */
-  U32_T   cycles2 = (U32_T)warriors * (U32_T)cycles;
+#ifdef BROWSER
+  static U32_T cycles2;
+#else
+  U32_T cycles2 = (U32_T)warriors * (U32_T)cycles;
+#endif
 #ifndef SERVER
   char    outs[60];                /* for cdb() entering message */
 #endif
@@ -276,6 +294,14 @@ register  int     temp;                        /* general purpose temporary vari
   ADDR_T raddrB = 0;
 #endif
 
+#ifdef BROWSER
+  if (web_phase == 3) return;
+  if (web_phase == 1) goto web_resume;
+  if (web_phase == 2) goto web_next_round;
+  positions = coreSize + 1 - (separation << 1);
+  coreSize1 = coreSize - 1;
+  cycles2 = (U32_T)warriors * (U32_T)cycles;
+#endif
   endWar = warrior + warriors;
 
 #ifdef PERMUTATE
@@ -409,12 +435,23 @@ register  int     temp;                        /* general purpose temporary vari
     } while (++temp < warriors);
 
     display_clear();
+#ifdef BROWSER
+    web_phase = 1;
+    return; /* let the browser present the initial core before execution */
+#endif
     /* the inner loop of execution */
     do {                        /* each cycle */
+#ifdef BROWSER
+web_resume:
+      if (web_should_yield()) return;
+#endif
       display_cycle();
      // progCnt = *(W->taskHead++);
      // IR = memory[progCnt];        /* copy instruction into register */
-	IR = memory[(progCnt= *(W->taskHead++))];        
+	IR = memory[(progCnt= *(W->taskHead++))];
+#ifdef BROWSER
+      web_record_instruction(progCnt);
+#endif
 #ifndef DOS16
       if (W->taskHead == endQueue)
 	W->taskHead = taskQueue;
@@ -1359,12 +1396,12 @@ if (IR.B_mode != (FIELD_T) IMMEDIATE)
 #endif                                /* PSPACE */
       case OP(MOV, mI):
 	display_read(addrA);
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
 	if (!copyDebugInfo)
 	  temp = memory[addrB].debuginfo;
 #endif
 	memory[addrB] = memory[addrA];
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
 	if (!copyDebugInfo)
 	  memory[addrB].debuginfo = temp;
 #endif
@@ -1430,6 +1467,16 @@ nextround:
       debugState = cdb(outs);
     }
 #endif
+#ifdef BROWSER
+    web_round_complete();
+    web_event(WEB_ROUND, 0, 0, round_num);
+    if (round_num < rounds) {
+      web_phase = 2;
+      return; /* preserve final round events before clearing the next core */
+    }
+web_next_round:
+    ;
+#endif
   } while (round_num < rounds && (++round_num, TRUE));
 
   display_close();
@@ -1441,8 +1488,12 @@ nextround:
 #endif
 #ifndef DOS16
   /* DOS taskQueue may not be free'd because of segment wrap-around */
+#ifdef BROWSER
+  web_phase = 3; /* retain final core for inspection; JS releases the instance */
+#else
   free(memory);
   free(taskQueue);
   alloc_p = 0;
+#endif
 #endif
 }

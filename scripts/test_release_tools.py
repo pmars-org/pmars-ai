@@ -36,13 +36,19 @@ class ReleaseGateTests(unittest.TestCase):
     def test_complete_set_hashes_exact_archive_bytes(self):
         release.checksums(self.output, self.ver)
         lines = (self.output / 'SHA256SUMS').read_text().splitlines()
-        self.assertEqual(len(lines), 6)
+        self.assertEqual(len(lines), len(release.PLATFORMS))
         for line in lines:
             digest, name = line.split('  ')
             self.assertEqual(digest, hashlib.sha256((self.output / name).read_bytes()).hexdigest())
 
     def test_missing_platform_blocks_publication(self):
         (self.output / release.archive_name(self.ver, 'linux-arm64')).unlink()
+        with self.assertRaisesRegex(ValueError, 'Archive set mismatch'):
+            release.checksums(self.output, self.ver)
+        self.assertFalse((self.output / 'SHA256SUMS').exists())
+
+    def test_missing_wasm_blocks_publication(self):
+        (self.output / release.archive_name(self.ver, 'wasm')).unlink()
         with self.assertRaisesRegex(ValueError, 'Archive set mismatch'):
             release.checksums(self.output, self.ver)
         self.assertFalse((self.output / 'SHA256SUMS').exists())

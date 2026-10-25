@@ -1,4 +1,4 @@
-# Binary releases
+# Native and WebAssembly releases
 
 The **Build release binaries** GitHub Actions workflow builds and tests:
 
@@ -9,6 +9,7 @@ The **Build release binaries** GitHub Actions workflow builds and tests:
 | Linux ARM64 (AArch64) | Ubuntu 22.04 ARM64, GCC | pmars, pmars-server, pmars-sdl3 |
 | macOS Apple Silicon | macOS 15 ARM64, Apple Clang | pmars, pmars-server, pmars-sdl3 |
 | macOS Intel | macOS 15 Intel, Apple Clang | pmars, pmars-server, pmars-sdl3 |
+| WebAssembly | Ubuntu 22.04, Emscripten 4.0.23 | Browser app, ES modules, worker and WASM engine |
 
 `pmars` includes cdb; `pmars-server` excludes it. SDL3 and Windows compiler
 runtimes are linked statically. Linux still needs glibc 2.35 or newer and
@@ -23,7 +24,7 @@ Redcode debugger from console or graphics builds.
 
 ## Try a build
 
-Pull requests and pushes to `main` build all five platforms without publishing
+Pull requests and pushes to `main` build all five native platforms and WebAssembly without publishing
 a release. In the workflow run's Artifacts section, choose just your platform:
 
 - **build-windows-x64**
@@ -31,13 +32,14 @@ a release. In the workflow run's Artifacts section, choose just your platform:
 - **build-linux-arm64** (64-bit ARM; not ARMv7/32-bit)
 - **build-macos-arm64** (Apple Silicon)
 - **build-macos-x64** (Intel)
+- **build-wasm** (browser app and reusable engine)
 - **build-source** (source only)
 
 Each download contains one ZIP with the matching source, configuration files,
 warriors and, for platform builds, binaries. Individual downloads become
 available as soon as that platform's tests and packaging pass.
 
-For testing everything, **all-platforms-downloads** contains all six ZIPs and
+For testing everything, **all-platforms-downloads** contains all seven ZIPs and
 `SHA256SUMS`. This combined download appears after all jobs pass.
 Published GitHub Releases also list each platform ZIP separately, so users
 can download their platform directly without downloading the others.
@@ -80,16 +82,30 @@ pmars-ai-0.9.6-linux-x64.zip
 pmars-ai-0.9.6-linux-arm64.zip
 pmars-ai-0.9.6-macos-arm64.zip
 pmars-ai-0.9.6-macos-x64.zip
+pmars-ai-0.9.6-wasm.zip
 SHA256SUMS
 ```
 
-Each platform ZIP contains the complete matching Git source (including
+Each native platform ZIP contains the complete matching Git source (including
 warriors, config, documentation, tests, and bundled SDL3 source), plus its
 binaries in `bin/`. The source ZIP has no binaries. Every ZIP has one
 `pmars-ai-<version>/` root folder, a visible SDL3 license, `QUICKSTART.txt`,
 and `release.json` recording the exact source commit and platform.
 Unix executable permissions are recorded in the ZIP; use an unzip tool that
 preserves them. Packages contain neither build intermediates nor `.git`.
+
+The WASM ZIP contains a deployable `docs/` directory, the public `pmars.mjs`
+entry point, the full browser UI, third-party editor notices, GPL license and
+`pmars-source.zip` corresponding source. It has no native executable or SDL3
+bundle. Its extracted engine is smoke-tested before upload. See
+[the integration guide](docs/INTEGRATION.md) for self-hosting and version-pinned
+CDN imports; a CDN reads the committed tag's assets, not the release ZIP.
+
+The reusable `.github/workflows/wasm.yml` is called by the release workflow, so
+main/PR/tag builds use one tested WASM path. The collection job requires all
+seven archives from the same commit before publication. WASM failures block a
+tagged release just as native failures do. Manual WASM runs create only the
+`build-wasm` artifact. This does not configure Pages, publish to npm or deploy a CDN.
 
 The release description is generated from GitHub's release notes and can be
 edited afterward. Existing releases/assets are never overwritten. A failed
@@ -114,7 +130,24 @@ Choose the native platform as appropriate. Output goes into ignored `dist/`.
 Source comes from **Git HEAD**, not uncommitted working files: commit source
 changes and rebuild before preparing a distributable release. The binary
 header is checked against the requested platform/architecture.
-`python scripts/package_release.py checksums` requires all six archives for
+`python scripts/package_release.py checksums` requires all seven archives for
 the current version and commit, and rejects missing, extra or mixed-version
 archives. It is normally run by the collection job after downloading the
-five native builds and source package.
+five native builds, the WASM package and the source package.
+
+## Build a WASM download locally
+
+Activate Emscripten 4.0.23, then run:
+
+```sh
+npm ci
+npm run build:editor
+python3 docs/build.py
+python3 scripts/package_release.py package --platform wasm
+python3 scripts/test_release_package.py --platform wasm
+```
+
+The archive is written to `dist/`. The packaging smoke test requires Node.js.
+Before tagging, rebuild and commit the browser artifacts so direct tag/CDN
+imports contain the matching engine. The workflow rebuilds and tests them again
+for the downloadable release. Do not move a published version tag.

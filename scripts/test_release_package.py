@@ -20,6 +20,35 @@ def test_archive(path, target, ver):
         for name in names:
             assert name.startswith(prefix) and '..' not in PurePosixPath(name).parts, name
             assert '/.git/' not in name and not name.endswith(('.o', '.dll')), name
+        if target == 'wasm':
+            for name in ('docs/pmars.mjs', 'docs/engine.mjs', 'docs/worker.mjs',
+                         'docs/settings.mjs', 'docs/dist/pmars.mjs', 'docs/dist/pmars.wasm',
+                         'docs/dist/editor.mjs', 'docs/dist/editor-LICENSES.txt',
+                         'docs/COPYING', 'docs/pmars-source.zip', 'docs/INTEGRATION.md',
+                         'docs/index.html', 'docs/.nojekyll', 'QUICKSTART.txt'):
+                assert prefix + name in names, name
+            assert not any('/test-output/' in n or '/test-' in n for n in names)
+            assert archive.read(prefix + 'docs/dist/pmars.wasm')[:8] == b'\0asm\x01\0\0\0'
+            metadata = json.loads(archive.read(prefix + 'release.json'))
+            assert metadata['platform'] == target and metadata['version'] == ver
+            with tempfile.TemporaryDirectory(prefix='pmars wasm ', dir=ROOT / 'security' / 'build') as folder:
+                archive.extractall(folder)
+                install = Path(folder) / prefix.rstrip('/')
+                subprocess.run(['node', '--input-type=module', '-e', """
+                    import assert from 'node:assert/strict';
+                    import {Engine, settings, workerURL} from './docs/pmars.mjs';
+                    assert.equal(settings().coreSize, 8000);
+                    assert.equal(workerURL.pathname.endsWith('/worker.mjs'), true);
+                    const engine = await Engine.create({warriors:2, rounds:3, cycles:20}, {visual:false});
+                    engine.compile(Array(2).fill(';redcode\\n;assert 1\\nmov 0,1\\n'));
+                    let update = engine.start();
+                    while (!update.done) update = engine.advance(100000, 8);
+                    assert.equal(update.completed, 3);
+                    assert.equal(update.warriors[0].ties, 3);
+                    console.log('PASS: extracted WASM public API runs a three-round match.');
+                """], cwd=install, check=True, timeout=30)
+            print('PASS: WASM ZIP contents, licenses, source and module integrity')
+            return
         for name in ('src/Makefile', 'src/configpath.c', 'CMakeLists.txt', 'COPYING',
                      'config/nano.opt', 'config/pmars.mac', 'warriors/sunset.red',
                      'dependencies/SDL3-3.4.16.zip', 'licenses/SDL3.txt', 'QUICKSTART.txt'):

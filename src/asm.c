@@ -157,7 +157,7 @@ char   *opname[] =
 #endif
 
 char   *modname[] = {"A", "B", "AB", "BA", "F", "X", "I", ""};
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
 char   *swname[] = {"DEBUG", "TRACE", "BREAK", "ASSERT", ""};
 #else
 char   *swname[] = {"ASSERT", ""};
@@ -671,7 +671,7 @@ lineswitch(str, dest, idx, aline)        /* line switch */
     }
   }
 
-#ifndef SERVER
+#if !defined(SERVER) || defined(BROWSER)
   if (strcmp(token, "DEBUG") == 0) {
     get_token(str, &i, token);
     to_upper(token);

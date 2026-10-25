@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pMARS AI — Core War</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg?v=22ede45f08e7cbab">
+<meta name="description" content="Play Core War in your browser with pMARS. Edit and validate warriors, watch battles, or run match series locally with WebAssembly.">
+<link rel="stylesheet" href="style.css?v=22ede45f08e7cbab">
+</head>
+<body>
+<header><h1>pMARS AI</h1>
+<p>Core War in your browser</p></header>
+<main>
+<div class="roster"><span id="warriorCount">0 warriors</span><label class="editor-theme-control">Background <select id="editorTheme"><option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option></select></label><label class="syntax-theme-control">Syntax colors <select id="editorSyntax"><option value="ocean">Ocean</option><option value="warm">Warm</option><option value="mono">Monochrome</option></select></label><button id="toggleEditors" hidden class="disclosure-all" aria-expanded="true" aria-controls="editors">▾ Collapse all</button></div>
+<section id="editors" class="editors" aria-label="Warrior source code"></section>
+<section id="demos" class="demos"><h2>Try a demo:</h2><div class="demo-buttons"><button id="demo" title="Load Dwarf and Imp and start a standard match">Dwarf vs Imp</button><button id="randomDemo" title="Start a duel between two different bundled warriors">Random duel</button><button id="multiDemo" title="Start a battle with all bundled warriors except validate.red">Multiwarrior</button></div></section>
+<div class="warrior-import"><div id="dropZone" tabindex="0" role="button" aria-label="Drop warrior files or open file picker">Drop warrior files here, or click to upload</div><button id="newWarrior">New warrior</button></div>
+<input id="warriorFiles" type="file" multiple accept=".red,.rc,.txt" hidden>
+<details id="consoleWindow"><summary><span>pMARS console output</span><button id="clearConsole" type="button">Clear output</button></summary><div id="sourceDiagnostics" aria-label="Source diagnostics"></div><pre id="consoleOutput" aria-label="Native pMARS console output">Validate a warrior or run a battle to see assembly output here.</pre></details>
+<p id="changed" class="hint" role="status"></p>
+<section class="match-settings"><div class="settings-bar"><button id="editSettings" class="settings-disclosure" aria-expanded="false" aria-controls="settingsDetails" aria-label="Expand match settings"><span id="settingsArrow" aria-hidden="true">▸</span> <strong id="settingsSummary"></strong></button>
+<label>Preset <select id="preset"></select></label>
+</div>
+<div id="settingsDetails" hidden><div id="settingsFields" class="settings"></div><p id="presetSource" class="hint"></p>
+<p class="hint">Each cycle allows one instruction per living warrior. Settings remain editable after selecting a preset.</p></div></section>
+<p id="status" class="sr-only" role="status" aria-atomic="true">Ready to assemble.</p>
+<p id="activeSettings" class="hint" aria-live="polite"></p>
+<progress id="progress" value="0" max="100" aria-label="Series progress" hidden></progress>
+<div class="page-layout"><label>Layout <select id="arenaLayout"><option value="vertical">Scroll vertically</option><option value="horizontal">Scroll horizontally</option><option value="fill">Fill vertically</option><option value="fill-horizontal">Fill horizontally</option></select></label><label>Cell size <select id="cellSize"><option value="0">Auto · whole pixels</option><option value="4">Classic · 2×2 mark</option><option value="6">Compact · 4×4 mark</option><option value="8" selected>8 px</option><option value="12">12 px</option><option value="16">16 px</option><option value="24">24 px</option></select></label><label class="arena-theme">Theme <select id="theme"><option value="modern">Modern</option><option value="classic">pMARS classic</option><option value="accessible">pMARS accessible</option></select></label></div>
+<section class="arena" aria-label="Core arena">
+<div class="arena-controls">
+<div class="battle-toolbar">
+<button id="run" class="primary"><span class="control-icon" aria-hidden="true">▶</span> Run</button><button id="step"><span class="control-icon" aria-hidden="true">▸</span> Step</button><button id="reset" title="Reload current sources and pause before the first instruction"><span class="control-icon" aria-hidden="true">↺</span> Reset</button>
+<button id="debugRun" title="Run to the next ;break or ;trace instruction"><span class="control-icon" aria-hidden="true">◇</span> Debug</button><button id="fast" aria-pressed="false" title="Run all configured rounds without speed throttling, drawing, charts, or instruction logging"><span class="control-icon" aria-hidden="true">»</span> Fast</button>
+</div>
+<label class="rounds-control">Rounds <input id="rounds" aria-label="Rounds (-r)" type="number" min="0" max="2147483647" value="1"></label>
+<span id="timing">Cycle —</span>
+<label class="speed-control" title="Instructions per second">Speed <input id="speed" aria-label="Instructions per second" aria-valuetext="1,000 instructions per second" type="range" min="0" max="5.1" value="3" step="0.1"><output id="speedValue">1,000</output></label>
+<output id="hoverAddress" aria-label="Hovered memory address">Cell: —</output>
+</div>
+<div class="arena-space"><div class="arena-viewport" data-layout="vertical" tabindex="0" role="region" aria-label="Scrollable core arena">
+<canvas id="core" aria-label="Core memory activity; click a cell to inspect it in the debugger"></canvas></div></div>
+</section>
+<div class="legend"><span id="legendNames"></span><span><span class="glyph read"></span> Read (top-left)
+<span class="glyph write"></span> Write (opposite corners)
+<span class="glyph exec"></span> Execute (all four)
+<span class="glyph dec"></span> Decrement (top row)
+<span class="glyph inc"></span> Increment (left column) · White outline: last execution</span></div>
+<section id="battleResults" hidden aria-label="Battle results"><h2 id="battleTotals">Results</h2><div id="scores"></div></section>
+<section class="debugger" tabindex="0" aria-label="Core debugger">
+<div class="console-heading"><h2>Debugger / Consoles</h2></div><span id="coreViewTitle" class="hint"></span><div class="debug-options"><label><input id="debugEnabled" type="checkbox"> Stop at breakpoints and debug markers</label></div>
+
+<div id="execution" class="console-grid"><button id="addConsole" class="add-console" type="button">+ Add console</button></div>
+<div class="command-workspace"><div id="commandHistory" aria-label="Command history"></div><form id="commandForm"><label for="command">Native cdb command</label><input id="command" title="Enter a command; press Enter with an empty field to repeat the last command" placeholder="list 0,9 · step · macro f7 · calc 2+3" autocomplete="off"><button>Execute</button></form><pre id="commandOutput" role="status"></pre></div>
+<details id="debugHelp"><summary>Native pMARS debugger help</summary>
+<p>The command line uses pMARS cdb, including expressions, command chains (<code>~</code>), loops, conditional commands, and macros. The original <code>pmars.mac</code> and <code>mw.mac</code> are preloaded. Enter <code>help</code> for native command help or <code>macro</code> to list macros.</p>
+<p><code>step</code> executes one instruction; native <code>step 10</code> changes the current program counter to address 10 before executing. To execute ten instructions, use <code>skip 9</code> or <code>step~!10</code>. Enter on an empty field recalls the last native command chain.</p>
+<p><code>trace 100</code> and <code>untrace 100</code> set and clear source-style breakpoints. <code>edit</code>, <code>fill</code>, and paged listings request their next input in the same field. Use the toolbar's Cancel button to interrupt a macro or prompt. Native <code>reset</code> cancels a command chain; the toolbar Reset (or <code>reset battle</code>) reloads the battle.</p>
+<p>Files used by cdb live in this match's temporary browser filesystem. Shell commands are unavailable. Native text-panel macros share this browser output view. F5/F7/F8/F9 and navigation shortcuts invoke the real macros outside editable controls.</p>
+</details>
+</section>
+<section class="analysis-controls"><label><input id="pauseViews" type="checkbox"> Pause all charts and execution logs</label>
+<div class="chart-grid"><section><label><input id="pauseProcesses" type="checkbox"> Pause process chart</label><canvas id="processChart" aria-label="Process count over cycles"></canvas></section>
+<section><label><input id="pauseScores" type="checkbox"> Pause score chart</label><canvas id="scoreChart" aria-label="Cumulative score over completed battles"></canvas></section></div></section>
+<div class="lower">
+<details id="diagnostics"><summary id="diagnosticsTitle">Show diagnostics</summary><p id="sliceTiming">Peak simulation slice: 0.0 ms</p><pre id="log" aria-label="Assembly diagnostics">Ready.</pre></details></div>
+<footer>pMARS 0.9.6-dev · ICWS ’94 extensions · GPL-2.0-or-later · <a href="COPYING">License</a> · <a href="dist/editor-LICENSES.txt">Editor licenses</a> · <a href="pmars-source.zip">Download source</a></footer>
+</main><script type="module" src="app.mjs?v=22ede45f08e7cbab"></script>
+</body></html>

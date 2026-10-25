@@ -138,9 +138,12 @@ jobs:
           compression-level: 0
           overwrite: true
 
+  wasm:
+    uses: ./.github/workflows/wasm.yml
+
   collect:
     name: Verify release set and calculate checksums
-    needs: [source, build]
+    needs: [source, build, wasm]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     steps:
@@ -153,7 +156,7 @@ jobs:
           pattern: build-*
           path: dist
           merge-multiple: true
-      - name: Require all six matching archives
+      - name: Require all seven matching archives
         run: python scripts/package_release.py checksums
       - uses: actions/upload-artifact@v7
         with:

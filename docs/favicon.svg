@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>corewar.dev — two warriors in the core</title>
+  <rect width="32" height="32" rx="6" fill="#08131d"/>
+  <path fill="#263b4a" d="M17 3h5v5h-5zM24 3h5v5h-5zM10 10h5v5h-5zM24 10h5v5h-5zM3 17h5v5H3zM17 17h5v5h-5zM3 24h5v5H3zM10 24h5v5h-5z"/>
+  <path fill="#54d8df" d="M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM17 10h5v5z"/>
+  <path fill="#f9a567" d="M24 17h5v5h-5zM17 24h5v5h-5zM24 24h5v5h-5zM10 17v5h5z"/>
+</svg>
